@@ -1,18 +1,73 @@
 package main
 
 import (
+	"bytes"
 	"context"
 	"flag"
 	"fmt"
+	"io"
+	"io/ioutil"
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 
+	"github.com/russross/blackfriday/v2"
 	"golang.org/x/sync/errgroup"
 )
 
+var bufPool = sync.Pool{
+	New: func() interface{} {
+		return new(bytes.Buffer)
+	},
+}
+
+var defaultMeta = map[string]func(*os.File) interface{}{
+	"title": func(file *os.File) interface{} {
+		return RemoveExt(filepath.Base(file.Name()))
+	},
+}
+
 func processFile(ctx context.Context, dst, src string) error {
-	panic("Not implemented.")
+	buf := bufPool.Get().(*bytes.Buffer)
+	defer func() {
+		buf.Reset()
+		bufPool.Put(buf)
+	}()
+
+	in, err := os.Open(src)
+	if err != nil {
+		return err
+	}
+	defer in.Close()
+
+	_, err = io.Copy(buf, in)
+	if err != nil {
+		return fmt.Errorf("read %q: %w", src, err)
+	}
+
+	md := blackfriday.New()
+	node := md.Parse(buf.Bytes())
+
+	meta, err := getMeta(node)
+	if err != nil {
+		return fmt.Errorf("get meta from %q: %w", src, err)
+	}
+	for k, f := range defaultMeta {
+		if _, ok := meta[k]; ok {
+			continue
+		}
+
+		meta[k] = f(in)
+	}
+
+	fmt.Println(meta)
+	err = RenderMarkdown(os.Stdout, node, blackfriday.NewHTMLRenderer(blackfriday.HTMLRendererParameters{}))
+	if err != nil {
+		return fmt.Errorf("render %q: %w", src, err)
+	}
+
+	return nil
 }
 
 func main() {
@@ -29,14 +84,7 @@ func main() {
 		source = "."
 	}
 
-	dir, err := os.Open(source)
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "Error: open source directory: %v\n", err)
-		os.Exit(1)
-	}
-	defer dir.Close()
-
-	files, err := dir.Readdir(-1)
+	files, err := ioutil.ReadDir(source)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Error: readdir on source directory: %v\n", err)
 		os.Exit(1)
