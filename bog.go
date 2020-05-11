@@ -12,6 +12,7 @@ import (
 	"strings"
 	"sync"
 
+	"github.com/gosimple/slug"
 	"github.com/russross/blackfriday/v2"
 	"golang.org/x/sync/errgroup"
 )
@@ -61,10 +62,29 @@ func processFile(ctx context.Context, dst, src string) error {
 		meta[k] = f(in)
 	}
 
-	fmt.Println(meta)
-	err = RenderMarkdown(os.Stdout, node, blackfriday.NewHTMLRenderer(blackfriday.HTMLRendererParameters{}))
+	ininfo, err := in.Stat()
 	if err != nil {
-		return fmt.Errorf("render %q: %w", src, err)
+		return fmt.Errorf("stat %q: %w", src, err)
+	}
+
+	dst = filepath.Join(dst, slug.Make(meta["title"].(string))+".html")
+	outinfo, err := os.Stat(dst)
+	if (err != nil) && !os.IsNotExist(err) {
+		return fmt.Errorf("stat %q: %w", dst, err)
+	}
+	if (outinfo != nil) && outinfo.ModTime().After(ininfo.ModTime()) {
+		return nil
+	}
+
+	out, err := os.Create(dst)
+	if err != nil {
+		return err
+	}
+	defer out.Close()
+
+	err = RenderMarkdown(out, node, blackfriday.NewHTMLRenderer(blackfriday.HTMLRendererParameters{}))
+	if err != nil {
+		return fmt.Errorf("render %q: %w", dst, err)
 	}
 
 	return nil
@@ -82,6 +102,15 @@ func main() {
 	source := flag.Arg(0)
 	if source == "" {
 		source = "."
+	}
+	if *output == "" {
+		*output = source
+	}
+
+	err := os.MkdirAll(*output, 0755)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Error: make output directory: %v\n", err)
+		os.Exit(1)
 	}
 
 	files, err := ioutil.ReadDir(source)
