@@ -23,28 +23,37 @@ var bufPool = sync.Pool{
 	},
 }
 
-var defaultMeta = map[string]func(*os.File) interface{}{
-	"title": func(file *os.File) interface{} {
+var defaultMeta = map[string]func(os.FileInfo) interface{}{
+	"title": func(file os.FileInfo) interface{} {
 		return RemoveExt(filepath.Base(file.Name()))
 	},
 }
 
-func processFile(ctx context.Context, dst, src string) error {
+func readFile(path string) (*bytes.Buffer, error) {
+	file, err := os.Open(path)
+	if err != nil {
+		return nil, err
+	}
+	defer file.Close()
+
 	buf := bufPool.Get().(*bytes.Buffer)
+	_, err = io.Copy(buf, file)
+	return buf, err
+}
+
+func processFile(ctx context.Context, dst, src string) error {
+	buf, err := readFile(src)
 	defer func() {
 		buf.Reset()
 		bufPool.Put(buf)
 	}()
-
-	in, err := os.Open(src)
 	if err != nil {
 		return err
 	}
-	defer in.Close()
 
-	_, err = io.Copy(buf, in)
+	srcinfo, err := os.Stat(src)
 	if err != nil {
-		return fmt.Errorf("read %q: %w", src, err)
+		return err
 	}
 
 	md := blackfriday.New()
@@ -59,20 +68,15 @@ func processFile(ctx context.Context, dst, src string) error {
 			continue
 		}
 
-		meta[k] = f(in)
-	}
-
-	ininfo, err := in.Stat()
-	if err != nil {
-		return fmt.Errorf("stat %q: %w", src, err)
+		meta[k] = f(srcinfo)
 	}
 
 	dst = filepath.Join(dst, slug.Make(meta["title"].(string))+".html")
-	outinfo, err := os.Stat(dst)
+	dstinfo, err := os.Stat(dst)
 	if (err != nil) && !os.IsNotExist(err) {
 		return fmt.Errorf("stat %q: %w", dst, err)
 	}
-	if (outinfo != nil) && outinfo.ModTime().After(ininfo.ModTime()) {
+	if (dstinfo != nil) && dstinfo.ModTime().After(srcinfo.ModTime()) {
 		return nil
 	}
 
