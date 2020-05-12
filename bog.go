@@ -10,18 +10,12 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
-	"sync"
+	"text/template"
 
 	"github.com/gosimple/slug"
 	"github.com/russross/blackfriday/v2"
 	"golang.org/x/sync/errgroup"
 )
-
-var bufPool = sync.Pool{
-	New: func() interface{} {
-		return new(bytes.Buffer)
-	},
-}
 
 var defaultMeta = map[string]func(os.FileInfo) interface{}{
 	"title": func(file os.FileInfo) interface{} {
@@ -36,17 +30,14 @@ func readFile(path string) (*bytes.Buffer, error) {
 	}
 	defer file.Close()
 
-	buf := bufPool.Get().(*bytes.Buffer)
+	buf := GetBuffer()
 	_, err = io.Copy(buf, file)
 	return buf, err
 }
 
-func processFile(ctx context.Context, dst, src string) error {
-	buf, err := readFile(src)
-	defer func() {
-		buf.Reset()
-		bufPool.Put(buf)
-	}()
+func processFile(ctx context.Context, dst, src string, tmpl *template.Template) error {
+	srcbuf, err := readFile(src)
+	defer PutBuffer(srcbuf)
 	if err != nil {
 		return err
 	}
@@ -57,7 +48,7 @@ func processFile(ctx context.Context, dst, src string) error {
 	}
 
 	md := blackfriday.New()
-	node := md.Parse(buf.Bytes())
+	node := md.Parse(srcbuf.Bytes())
 
 	meta, err := getMeta(node)
 	if err != nil {
@@ -69,6 +60,14 @@ func processFile(ctx context.Context, dst, src string) error {
 		}
 
 		meta[k] = f(srcinfo)
+	}
+
+	dstbuf := GetBuffer()
+	defer PutBuffer(dstbuf)
+
+	err = RenderMarkdown(dstbuf, node, blackfriday.NewHTMLRenderer(blackfriday.HTMLRendererParameters{}))
+	if err != nil {
+		return fmt.Errorf("render %q: %w", dst, err)
 	}
 
 	dst = filepath.Join(dst, slug.Make(meta["title"].(string))+".html")
@@ -86,12 +85,15 @@ func processFile(ctx context.Context, dst, src string) error {
 	}
 	defer out.Close()
 
-	err = RenderMarkdown(out, node, blackfriday.NewHTMLRenderer(blackfriday.HTMLRendererParameters{}))
+	err = tmpl.Execute(out, map[string]interface{}{
+		"content": dstbuf.String(),
+		"meta":    meta,
+	})
 	if err != nil {
-		return fmt.Errorf("render %q: %w", dst, err)
+		return fmt.Errorf("execute template for %q: %v", src, err)
 	}
 
-	return nil
+	return ctx.Err()
 }
 
 func main() {
@@ -123,6 +125,8 @@ func main() {
 		os.Exit(1)
 	}
 
+	pageTmpl := template.Must(template.New("page").Parse(defaultPage))
+
 	eg, ctx := errgroup.WithContext(context.Background())
 	for _, file := range files {
 		if strings.ToLower(filepath.Ext(file.Name())) != ".md" {
@@ -131,7 +135,7 @@ func main() {
 
 		file := file
 		eg.Go(func() error {
-			return processFile(ctx, *output, filepath.Join(source, file.Name()))
+			return processFile(ctx, *output, filepath.Join(source, file.Name()), pageTmpl)
 		})
 	}
 
