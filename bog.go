@@ -13,6 +13,7 @@ import (
 	"text/template"
 
 	"github.com/DeedleFake/bog/internal/bufpool"
+	"github.com/DeedleFake/bog/markdown"
 	"github.com/gosimple/slug"
 	"github.com/russross/blackfriday/v2"
 	"golang.org/x/sync/errgroup"
@@ -66,7 +67,7 @@ func processFile(ctx context.Context, dst, src string, tmpl *template.Template) 
 	dstbuf := bufpool.Get()
 	defer bufpool.Put(dstbuf)
 
-	err = RenderMarkdown(dstbuf, node, blackfriday.NewHTMLRenderer(blackfriday.HTMLRendererParameters{}))
+	err = markdown.Render(dstbuf, node, blackfriday.NewHTMLRenderer(blackfriday.HTMLRendererParameters{}))
 	if err != nil {
 		return fmt.Errorf("render %q: %w", dst, err)
 	}

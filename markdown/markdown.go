@@ -1,4 +1,4 @@
-package main
+package markdown
 
 import (
 	"io"
@@ -21,11 +21,11 @@ func (w *errWriter) Write(data []byte) (int, error) {
 	return n, err
 }
 
-// RenderMarkdown renders markdown to an io.Writer. It essentially
-// replicates the internals of blackfriday.Run because, for some
-// bizarre reason, the actual rendering logic is not exported anywhere
-// other than that.
-func RenderMarkdown(w io.Writer, node *blackfriday.Node, renderer blackfriday.Renderer) error {
+// Render renders markdown to an io.Writer. It essentially replicates
+// the internals of blackfriday.Run because, for some bizarre reason,
+// the actual rendering logic is not exported anywhere other than
+// that.
+func Render(w io.Writer, node *blackfriday.Node, renderer blackfriday.Renderer) error {
 	ew := errWriter{w: w}
 
 	renderer.RenderHeader(&ew, node)
