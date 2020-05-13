@@ -1,4 +1,4 @@
-package main
+package bufpool
 
 import (
 	"bytes"
@@ -11,11 +11,11 @@ var bufPool = sync.Pool{
 	},
 }
 
-func GetBuffer() *bytes.Buffer {
+func Get() *bytes.Buffer {
 	return bufPool.Get().(*bytes.Buffer)
 }
 
-func PutBuffer(buf *bytes.Buffer) {
+func Put(buf *bytes.Buffer) {
 	buf.Reset()
 	bufPool.Put(buf)
 }

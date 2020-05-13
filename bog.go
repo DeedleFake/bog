@@ -12,6 +12,7 @@ import (
 	"strings"
 	"text/template"
 
+	"github.com/DeedleFake/bog/internal/bufpool"
 	"github.com/gosimple/slug"
 	"github.com/russross/blackfriday/v2"
 	"golang.org/x/sync/errgroup"
@@ -30,14 +31,14 @@ func readFile(path string) (*bytes.Buffer, error) {
 	}
 	defer file.Close()
 
-	buf := GetBuffer()
+	buf := bufpool.Get()
 	_, err = io.Copy(buf, file)
 	return buf, err
 }
 
 func processFile(ctx context.Context, dst, src string, tmpl *template.Template) error {
 	srcbuf, err := readFile(src)
-	defer PutBuffer(srcbuf)
+	defer bufpool.Put(srcbuf)
 	if err != nil {
 		return err
 	}
@@ -62,8 +63,8 @@ func processFile(ctx context.Context, dst, src string, tmpl *template.Template) 
 		meta[k] = f(srcinfo)
 	}
 
-	dstbuf := GetBuffer()
-	defer PutBuffer(dstbuf)
+	dstbuf := bufpool.Get()
+	defer bufpool.Put(dstbuf)
 
 	err = RenderMarkdown(dstbuf, node, blackfriday.NewHTMLRenderer(blackfriday.HTMLRendererParameters{}))
 	if err != nil {
