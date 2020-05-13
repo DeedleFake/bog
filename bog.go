@@ -98,6 +98,26 @@ func processFile(ctx context.Context, dst, src string, tmpl *template.Template) 
 	return ctx.Err()
 }
 
+func loadTemplate(tmpl *template.Template, def, path string) (*template.Template, error) {
+	if path == "" {
+		return tmpl.Parse(def)
+	}
+
+	file, err := os.Open(path)
+	if err != nil {
+		return tmpl, err
+	}
+	defer file.Close()
+
+	var sb strings.Builder
+	_, err = io.Copy(&sb, file)
+	if err != nil {
+		return tmpl, fmt.Errorf("copy: %w", err)
+	}
+
+	return tmpl.Parse(sb.String())
+}
+
 func main() {
 	flag.Usage = func() {
 		fmt.Fprintf(os.Stderr, "Usage: %v [options] [source directory]\n\n", os.Args[0])
@@ -105,6 +125,7 @@ func main() {
 		flag.PrintDefaults()
 	}
 	output := flag.String("out", "", "output directory, or source directory if blank")
+	page := flag.String("page", "", "if not blank, path to page template")
 	flag.Parse()
 
 	source := flag.Arg(0)
@@ -127,7 +148,11 @@ func main() {
 		os.Exit(1)
 	}
 
-	pageTmpl := template.Must(template.New("page").Parse(defaultPage))
+	pageTmpl, err := loadTemplate(template.New("page"), defaultPage, *page)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Error: load page template: %v\n", err)
+		os.Exit(1)
+	}
 
 	eg, ctx := errgroup.WithContext(context.Background())
 	for _, file := range files {
