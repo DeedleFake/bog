@@ -9,6 +9,7 @@ import (
 	"io/ioutil"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 	"text/template"
 
@@ -37,16 +38,16 @@ func readFile(path string) (*bytes.Buffer, error) {
 	return buf, err
 }
 
-func processFile(ctx context.Context, dst, src string, tmpl *template.Template) error {
+func processPage(ctx context.Context, dst, src string, tmpl *template.Template) (info *pageInfo, err error) {
 	srcbuf, err := readFile(src)
 	defer bufpool.Put(srcbuf)
 	if err != nil {
-		return err
+		return nil, err
 	}
 
-	srcinfo, err := os.Stat(src)
+	srcInfo, err := os.Stat(src)
 	if err != nil {
-		return err
+		return nil, err
 	}
 
 	md := blackfriday.New()
@@ -54,14 +55,14 @@ func processFile(ctx context.Context, dst, src string, tmpl *template.Template) 
 
 	meta, err := getMeta(node)
 	if err != nil {
-		return fmt.Errorf("get meta from %q: %w", src, err)
+		return nil, fmt.Errorf("get meta from %q: %w", src, err)
 	}
 	for k, f := range defaultMeta {
 		if _, ok := meta[k]; ok {
 			continue
 		}
 
-		meta[k] = f(srcinfo)
+		meta[k] = f(srcInfo)
 	}
 
 	dstbuf := bufpool.Get()
@@ -69,33 +70,80 @@ func processFile(ctx context.Context, dst, src string, tmpl *template.Template) 
 
 	err = markdown.Render(dstbuf, node, blackfriday.NewHTMLRenderer(blackfriday.HTMLRendererParameters{}))
 	if err != nil {
-		return fmt.Errorf("render %q: %w", dst, err)
+		return nil, fmt.Errorf("render %q: %w", dst, err)
 	}
 
 	dst = filepath.Join(dst, slug.Make(meta["title"].(string))+".html")
+
 	dstinfo, err := os.Stat(dst)
 	if (err != nil) && !os.IsNotExist(err) {
-		return fmt.Errorf("stat %q: %w", dst, err)
+		return nil, fmt.Errorf("stat %q: %w", dst, err)
 	}
-	if (dstinfo != nil) && dstinfo.ModTime().After(srcinfo.ModTime()) {
-		return nil
+	if (dstinfo != nil) && dstinfo.ModTime().After(srcInfo.ModTime()) {
+		return nil, ctx.Err()
 	}
 
 	out, err := os.Create(dst)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	defer out.Close()
 
-	err = tmpl.Execute(out, map[string]interface{}{
-		"content": dstbuf.String(),
-		"meta":    meta,
-	})
+	contentTmpl, err := template.New("content").Parse(dstbuf.String())
 	if err != nil {
-		return fmt.Errorf("execute template for %q: %v", src, err)
+		return nil, fmt.Errorf("parse content template for %q: %w", src, err)
 	}
 
-	return ctx.Err()
+	dstbuf.Reset()
+	err = contentTmpl.Execute(dstbuf, map[string]interface{}{
+		"Meta": meta,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("execute content template for %q: %w", src, err)
+	}
+
+	err = tmpl.Execute(out, map[string]interface{}{
+		"Content": dstbuf.String(),
+		"Meta":    meta,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("execute template for %q: %w", src, err)
+	}
+
+	dstinfo, err = os.Stat(dst)
+	if err != nil {
+		return nil, err
+	}
+
+	return &pageInfo{
+		Src:     src,
+		Dst:     dst,
+		SrcInfo: srcInfo,
+		DstInfo: dstinfo,
+		Meta:    meta,
+	}, ctx.Err()
+}
+
+type pageInfo struct {
+	Src, Dst         string
+	SrcInfo, DstInfo os.FileInfo
+	Meta             map[string]interface{}
+}
+
+func genTOC(dst string, pages []*pageInfo, tmpl *template.Template) error {
+	file, err := os.Create(filepath.Join(dst, "index.html"))
+	if err != nil {
+		return err
+	}
+	defer file.Close()
+
+	err = tmpl.Execute(file, map[string]interface{}{
+		"Pages": pages,
+	})
+	if err != nil {
+		return fmt.Errorf("execute index template: %w", err)
+	}
+	return nil
 }
 
 func loadTemplate(tmpl *template.Template, def, path string) (*template.Template, error) {
@@ -126,6 +174,8 @@ func main() {
 	}
 	output := flag.String("out", "", "output directory, or source directory if blank")
 	page := flag.String("page", "", "if not blank, path to page template")
+	index := flag.String("index", "", "if not blank, path to index template")
+	genindex := flag.Bool("genindex", true, "generate a table-of-contents")
 	flag.Parse()
 
 	source := flag.Arg(0)
@@ -154,7 +204,35 @@ func main() {
 		os.Exit(1)
 	}
 
+	indexTmpl, err := loadTemplate(template.New("index"), defaultIndex, *index)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Error: load index template: %v\n", err)
+		os.Exit(1)
+	}
+
 	eg, ctx := errgroup.WithContext(context.Background())
+
+	var pages []*pageInfo
+	pagec := make(chan *pageInfo)
+	go func() {
+		for {
+			select {
+			case <-ctx.Done():
+				close(pagec)
+				return
+
+			case page := <-pagec:
+				i := sort.Search(len(pages), func(i int) bool {
+					return page.DstInfo.ModTime().Before(pages[i].DstInfo.ModTime())
+				})
+
+				pages = append(pages, nil)
+				copy(pages[i+1:], pages[i:])
+				pages[i] = page
+			}
+		}
+	}()
+
 	for _, file := range files {
 		if strings.ToLower(filepath.Ext(file.Name())) != ".md" {
 			continue
@@ -162,13 +240,34 @@ func main() {
 
 		file := file
 		eg.Go(func() error {
-			return processFile(ctx, *output, filepath.Join(source, file.Name()), pageTmpl)
+			page, err := processPage(ctx, *output, filepath.Join(source, file.Name()), pageTmpl)
+			if page == nil {
+				return err
+			}
+
+			select {
+			case <-ctx.Done():
+				return ctx.Err()
+			case pagec <- page:
+				return nil
+			}
 		})
 	}
 
 	err = eg.Wait()
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+		os.Exit(1)
+	}
+
+	if !*genindex {
+		return
+	}
+
+	<-pagec
+	err = genTOC(*output, pages, indexTmpl)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Error: generate table-of-contents: %v\n", err)
 		os.Exit(1)
 	}
 }
