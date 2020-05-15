@@ -3,6 +3,7 @@ package main
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"flag"
 	"fmt"
 	"io"
@@ -38,7 +39,7 @@ func readFile(path string) (*bytes.Buffer, error) {
 	return buf, err
 }
 
-func processPage(ctx context.Context, dst, src string, tmpl *template.Template) (info *pageInfo, err error) {
+func processPage(ctx context.Context, dst, src string, tmpl *template.Template, data interface{}) (info *pageInfo, err error) {
 	srcbuf, err := readFile(src)
 	defer bufpool.Put(srcbuf)
 	if err != nil {
@@ -96,6 +97,7 @@ func processPage(ctx context.Context, dst, src string, tmpl *template.Template) 
 
 	dstbuf.Reset()
 	err = contentTmpl.Execute(dstbuf, map[string]interface{}{
+		"Data": data,
 		"Meta": meta,
 	})
 	if err != nil {
@@ -103,8 +105,9 @@ func processPage(ctx context.Context, dst, src string, tmpl *template.Template) 
 	}
 
 	err = tmpl.Execute(out, map[string]interface{}{
-		"Content": dstbuf.String(),
+		"Data":    data,
 		"Meta":    meta,
+		"Content": dstbuf.String(),
 	})
 	if err != nil {
 		return nil, fmt.Errorf("execute template for %q: %w", src, err)
@@ -130,7 +133,7 @@ type pageInfo struct {
 	Meta             map[string]interface{}
 }
 
-func genTOC(dst string, pages []*pageInfo, tmpl *template.Template) error {
+func genTOC(dst string, pages []*pageInfo, tmpl *template.Template, data interface{}) error {
 	file, err := os.Create(filepath.Join(dst, "index.html"))
 	if err != nil {
 		return err
@@ -138,12 +141,27 @@ func genTOC(dst string, pages []*pageInfo, tmpl *template.Template) error {
 	defer file.Close()
 
 	err = tmpl.Execute(file, map[string]interface{}{
+		"Data":  data,
 		"Pages": pages,
 	})
 	if err != nil {
 		return fmt.Errorf("execute index template: %w", err)
 	}
 	return nil
+}
+
+func readJSONFile(path string) (v interface{}, err error) {
+	file, err := os.Open(path)
+	if err != nil {
+		return nil, err
+	}
+	defer file.Close()
+
+	err = json.NewDecoder(file).Decode(&v)
+	if err != nil {
+		return nil, fmt.Errorf("decode: %w", err)
+	}
+	return v, nil
 }
 
 func loadTemplate(tmpl *template.Template, def, path string) (*template.Template, error) {
@@ -176,6 +194,7 @@ func main() {
 	page := flag.String("page", "", "if not blank, path to page template")
 	index := flag.String("index", "", "if not blank, path to index template")
 	genindex := flag.Bool("genindex", true, "generate a table-of-contents")
+	datafile := flag.String("data", "", "path to optional JSON data file")
 	flag.Parse()
 
 	source := flag.Arg(0)
@@ -184,6 +203,16 @@ func main() {
 	}
 	if *output == "" {
 		*output = source
+	}
+
+	var data interface{}
+	if *datafile != "" {
+		d, err := readJSONFile(*datafile)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "Error: read %q: %v\n", *datafile, err)
+			os.Exit(1)
+		}
+		data = d
 	}
 
 	err := os.MkdirAll(*output, 0755)
@@ -229,6 +258,8 @@ func main() {
 				pages = append(pages, nil)
 				copy(pages[i+1:], pages[i:])
 				pages[i] = page
+
+				fmt.Printf("%q -> %q\n", page.Src, page.Dst)
 			}
 		}
 	}()
@@ -240,7 +271,7 @@ func main() {
 
 		file := file
 		eg.Go(func() error {
-			page, err := processPage(ctx, *output, filepath.Join(source, file.Name()), pageTmpl)
+			page, err := processPage(ctx, *output, filepath.Join(source, file.Name()), pageTmpl, data)
 			if page == nil {
 				return err
 			}
@@ -265,7 +296,7 @@ func main() {
 	}
 
 	<-pagec
-	err = genTOC(*output, pages, indexTmpl)
+	err = genTOC(*output, pages, indexTmpl, data)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Error: generate table-of-contents: %v\n", err)
 		os.Exit(1)
