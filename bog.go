@@ -1,9 +1,7 @@
 package main
 
 import (
-	"bytes"
 	"context"
-	"encoding/json"
 	"flag"
 	"fmt"
 	"io"
@@ -25,18 +23,6 @@ var defaultMeta = map[string]func(os.FileInfo) interface{}{
 	"title": func(file os.FileInfo) interface{} {
 		return RemoveExt(filepath.Base(file.Name()))
 	},
-}
-
-func readFile(path string) (*bytes.Buffer, error) {
-	file, err := os.Open(path)
-	if err != nil {
-		return nil, err
-	}
-	defer file.Close()
-
-	buf := bufpool.Get()
-	_, err = io.Copy(buf, file)
-	return buf, err
 }
 
 func processPage(ctx context.Context, dst, src string, tmpl *template.Template, data interface{}) (info *pageInfo, err error) {
@@ -148,20 +134,6 @@ func genTOC(dst string, pages []*pageInfo, tmpl *template.Template, data interfa
 		return fmt.Errorf("execute index template: %w", err)
 	}
 	return nil
-}
-
-func readJSONFile(path string) (v interface{}, err error) {
-	file, err := os.Open(path)
-	if err != nil {
-		return nil, err
-	}
-	defer file.Close()
-
-	err = json.NewDecoder(file).Decode(&v)
-	if err != nil {
-		return nil, fmt.Errorf("decode: %w", err)
-	}
-	return v, nil
 }
 
 func loadTemplate(tmpl *template.Template, def, path string) (*template.Template, error) {
