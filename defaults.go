@@ -4,7 +4,7 @@ const (
 	defaultPage = `<!DOCTYPE html>
 <html>
 	<head>
-		<title>{{.Meta.title}}</title>
+		<title>{{.Meta.title}}{{with .Data.title}} - {{.}}{{end}}</title>
 	</head>
 	<body>
 		{{.Content}}
@@ -14,7 +14,7 @@ const (
 	defaultIndex = `<!DOCTYPE html>
 <html>
 	<head>
-		<title>Blog</title>
+		<title>Index{{with .Data.title}} - {{.}}{{end}}</title>
 	<head>
 	<body>
 		{{range .Pages -}}
