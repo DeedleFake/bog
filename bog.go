@@ -119,7 +119,7 @@ type pageInfo struct {
 	Meta             map[string]interface{}
 }
 
-func genTOC(dst string, pages []*pageInfo, tmpl *template.Template, data interface{}) error {
+func genIndex(dst string, pages []*pageInfo, tmpl *template.Template, data interface{}) error {
 	file, err := os.Create(filepath.Join(dst, "index.html"))
 	if err != nil {
 		return err
@@ -165,7 +165,7 @@ func main() {
 	output := flag.String("out", "", "output directory, or source directory if blank")
 	page := flag.String("page", "", "if not blank, path to page template")
 	index := flag.String("index", "", "if not blank, path to index template")
-	genindex := flag.Bool("genindex", true, "generate a table-of-contents")
+	genindex := flag.Bool("genindex", true, "generate an index")
 	datafile := flag.String("data", "", "path to optional JSON data file")
 	flag.Parse()
 
@@ -268,9 +268,9 @@ func main() {
 	}
 
 	<-pagec
-	err = genTOC(*output, pages, indexTmpl, data)
+	err = genIndex(*output, pages, indexTmpl, data)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "Error: generate table-of-contents: %v\n", err)
+		fmt.Fprintf(os.Stderr, "Error: generate index: %v\n", err)
 		os.Exit(1)
 	}
 }
