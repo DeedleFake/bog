@@ -9,7 +9,10 @@ import (
 	"golang.org/x/net/html"
 )
 
-func getMeta(node *blackfriday.Node) (meta map[string]interface{}, werr error) {
+// getMeta finds and retrieves metadata from a parsed markdown tree.
+// If unlink is true, the node containing the metadata is removed from
+// the tree.
+func getMeta(node *blackfriday.Node, unlink bool) (meta map[string]interface{}, werr error) {
 	var findComment func(*html.Node) (comment []byte, err error)
 	findComment = func(node *html.Node) (comment []byte, err error) {
 		if node.Type == html.CommentNode {
@@ -50,7 +53,10 @@ func getMeta(node *blackfriday.Node) (meta map[string]interface{}, werr error) {
 				return blackfriday.SkipChildren
 			}
 
-			node.Unlink()
+			if unlink {
+				node.Unlink()
+			}
+
 			return blackfriday.Terminate
 		}
 

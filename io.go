@@ -10,6 +10,8 @@ import (
 	"github.com/DeedleFake/bog/internal/bufpool"
 )
 
+// readFile reads a file into buffer that is retrieved from the buffer
+// pool.
 func readFile(path string) (*bytes.Buffer, error) {
 	file, err := os.Open(path)
 	if err != nil {
@@ -22,6 +24,7 @@ func readFile(path string) (*bytes.Buffer, error) {
 	return buf, err
 }
 
+// readJSONFile parses JSON data from the file at path.
 func readJSONFile(path string) (v interface{}, err error) {
 	file, err := os.Open(path)
 	if err != nil {

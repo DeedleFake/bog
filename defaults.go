@@ -1,5 +1,6 @@
 package main
 
+// Default templates.
 const (
 	defaultPage = `<!DOCTYPE html>
 <html>

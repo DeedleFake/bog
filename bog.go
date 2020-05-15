@@ -4,7 +4,6 @@ import (
 	"context"
 	"flag"
 	"fmt"
-	"io"
 	"io/ioutil"
 	"os"
 	"path/filepath"
@@ -19,12 +18,27 @@ import (
 	"golang.org/x/sync/errgroup"
 )
 
+// defaultMeta contains a mapping of names to functions that are
+// called in order to provide metadata values that haven't been
+// explicitly listed.
 var defaultMeta = map[string]func(os.FileInfo) interface{}{
 	"title": func(file os.FileInfo) interface{} {
 		return RemoveExt(filepath.Base(file.Name()))
 	},
 }
 
+// pageInfo contains information that was collected while processing
+// a page.
+type pageInfo struct {
+	Src, Dst         string
+	SrcInfo, DstInfo os.FileInfo
+	Meta             map[string]interface{}
+}
+
+// processPage loads a page from src, gets the metadata, runs it
+// through the provided template with that metadata and the provided
+// data, writes it to a file in the directory at dst, and then returns
+// information about the page that was processed.
 func processPage(ctx context.Context, dst, src string, tmpl *template.Template, data interface{}) (info *pageInfo, err error) {
 	srcbuf, err := readFile(src)
 	defer bufpool.Put(srcbuf)
@@ -40,7 +54,7 @@ func processPage(ctx context.Context, dst, src string, tmpl *template.Template, 
 	md := blackfriday.New()
 	node := md.Parse(srcbuf.Bytes())
 
-	meta, err := getMeta(node)
+	meta, err := getMeta(node, true)
 	if err != nil {
 		return nil, fmt.Errorf("get meta from %q: %w", src, err)
 	}
@@ -113,12 +127,9 @@ func processPage(ctx context.Context, dst, src string, tmpl *template.Template, 
 	}, ctx.Err()
 }
 
-type pageInfo struct {
-	Src, Dst         string
-	SrcInfo, DstInfo os.FileInfo
-	Meta             map[string]interface{}
-}
-
+// genIndex generates an index of the provided pages using the
+// provided template and writes it to a file under the directory at
+// dst.
 func genIndex(dst string, pages []*pageInfo, tmpl *template.Template, data interface{}) error {
 	file, err := os.Create(filepath.Join(dst, "index.html"))
 	if err != nil {
@@ -134,26 +145,6 @@ func genIndex(dst string, pages []*pageInfo, tmpl *template.Template, data inter
 		return fmt.Errorf("execute index template: %w", err)
 	}
 	return nil
-}
-
-func loadTemplate(tmpl *template.Template, def, path string) (*template.Template, error) {
-	if path == "" {
-		return tmpl.Parse(def)
-	}
-
-	file, err := os.Open(path)
-	if err != nil {
-		return tmpl, err
-	}
-	defer file.Close()
-
-	var sb strings.Builder
-	_, err = io.Copy(&sb, file)
-	if err != nil {
-		return tmpl, fmt.Errorf("copy: %w", err)
-	}
-
-	return tmpl.Parse(sb.String())
 }
 
 func main() {
