@@ -9,41 +9,8 @@ import (
 	"golang.org/x/net/html"
 )
 
-func getMeta(node *blackfriday.Node) (meta map[string]interface{}, err error) {
-	var findHTML func(*blackfriday.Node) (map[string]interface{}, error)
+func getMeta(node *blackfriday.Node) (meta map[string]interface{}, werr error) {
 	var findComment func(*html.Node) (comment []byte, err error)
-
-	findHTML = func(node *blackfriday.Node) (meta map[string]interface{}, err error) {
-		if node.Type == blackfriday.HTMLBlock {
-			hnode, err := html.Parse(bytes.NewReader(node.Literal))
-			if err != nil {
-				return nil, fmt.Errorf("parse HTML: %w", err)
-			}
-
-			comment, err := findComment(hnode)
-			if err != nil {
-				return nil, fmt.Errorf("find comment: %w", err)
-			}
-
-			if comment != nil {
-				var meta map[string]interface{}
-				err = json.Unmarshal(comment, &meta)
-				if err == nil {
-					return meta, nil
-				}
-			}
-		}
-
-		for node := node.FirstChild; node != nil; node = node.Next {
-			meta, err := findHTML(node)
-			if (meta != nil) || (err != nil) {
-				return meta, err
-			}
-		}
-
-		return nil, nil
-	}
-
 	findComment = func(node *html.Node) (comment []byte, err error) {
 		if node.Type == html.CommentNode {
 			return []byte(node.Data), nil
@@ -59,14 +26,36 @@ func getMeta(node *blackfriday.Node) (meta map[string]interface{}, err error) {
 		return nil, nil
 	}
 
-	meta, err = findHTML(node)
-	if err != nil {
-		return nil, err
-	}
+	meta = make(map[string]interface{})
+	node.Walk(func(node *blackfriday.Node, entering bool) blackfriday.WalkStatus {
+		if !entering || (node.Type != blackfriday.HTMLBlock) {
+			return blackfriday.GoToNext
+		}
 
-	if meta == nil {
-		meta = make(map[string]interface{})
-	}
+		hnode, err := html.Parse(bytes.NewReader(node.Literal))
+		if err != nil {
+			werr = fmt.Errorf("parse HTML: %w", err)
+			return blackfriday.Terminate
+		}
 
-	return meta, nil
+		comment, err := findComment(hnode)
+		if err != nil {
+			werr = fmt.Errorf("find comment: %w", err)
+			return blackfriday.Terminate
+		}
+
+		if comment != nil {
+			err = json.Unmarshal(comment, &meta)
+			if err != nil {
+				return blackfriday.SkipChildren
+			}
+
+			node.Unlink()
+			return blackfriday.Terminate
+		}
+
+		return blackfriday.GoToNext
+	})
+
+	return meta, werr
 }
