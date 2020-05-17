@@ -90,7 +90,7 @@ func processPage(ctx context.Context, dst, src string, tmpl *template.Template, 
 	}
 	defer out.Close()
 
-	contentTmpl, err := template.New("content").Parse(dstbuf.String())
+	contentTmpl, err := template.New("content").Funcs(tmplFuncs).Parse(dstbuf.String())
 	if err != nil {
 		return nil, fmt.Errorf("parse content template for %q: %w", src, err)
 	}
@@ -190,13 +190,13 @@ func main() {
 		os.Exit(1)
 	}
 
-	pageTmpl, err := loadTemplate(template.New("page"), defaultPage, *page)
+	pageTmpl, err := loadTemplate(template.New("page").Funcs(tmplFuncs), defaultPage, *page)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Error: load page template: %v\n", err)
 		os.Exit(1)
 	}
 
-	indexTmpl, err := loadTemplate(template.New("index"), defaultIndex, *index)
+	indexTmpl, err := loadTemplate(template.New("index").Funcs(tmplFuncs), defaultIndex, *index)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Error: load index template: %v\n", err)
 		os.Exit(1)

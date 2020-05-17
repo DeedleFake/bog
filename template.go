@@ -6,7 +6,14 @@ import (
 	"os"
 	"strings"
 	"text/template"
+
+	"github.com/gosimple/slug"
 )
+
+// tmplFuncs contains some utility functions for use in templates.
+var tmplFuncs = template.FuncMap{
+	"slugify": slug.Make,
+}
 
 // loadTemplate conditionally parses a template from either def or
 // path. If path is empty, def is considered to be the source and is
