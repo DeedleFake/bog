@@ -53,7 +53,7 @@ func LoadPage(path string, data interface{}) (*PageInfo, error) {
 
 	meta, err := getMeta(node, false)
 	if err != nil {
-		return nil, fmt.Errorf("get meta from %q: %w", path, err)
+		return nil, fmt.Errorf("get meta: %w", err)
 	}
 	for k, f := range defaultMeta {
 		if _, ok := meta[k]; ok {

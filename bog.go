@@ -12,7 +12,7 @@ import (
 	"text/template"
 	"time"
 
-	"golang.org/x/sync/errgroup"
+	"github.com/DeedleFake/bog/multierr"
 )
 
 // genIndex generates an index of the provided pages using the
@@ -33,6 +33,13 @@ func genIndex(dst string, pages []*PageInfo, tmpl *template.Template, data inter
 		return fmt.Errorf("template execute: %w", err)
 	}
 	return nil
+}
+
+func printErrors(intro string, errs []error) {
+	fmt.Fprintln(os.Stderr, intro)
+	for _, err := range errs {
+		fmt.Fprintf(os.Stderr, "\t%v\n", err)
+	}
 }
 
 func main() {
@@ -84,7 +91,7 @@ func main() {
 		os.Exit(1)
 	}
 
-	eg, ctx := errgroup.WithContext(context.Background())
+	eg, ctx := multierr.WithContext(context.Background())
 
 	var pages []*PageInfo
 	pagec := make(chan *PageInfo)
@@ -117,7 +124,7 @@ func main() {
 			path := filepath.Join(source, file.Name())
 			page, err := LoadPage(path, data)
 			if err != nil {
-				return fmt.Errorf("load %q: $w", path, err)
+				return fmt.Errorf("load %q: %w", path, err)
 			}
 
 			select {
@@ -129,9 +136,9 @@ func main() {
 		})
 	}
 
-	err = eg.Wait()
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+	errs := eg.Wait()
+	if len(errs) > 0 {
+		printErrors("Error(s) while loading pages:", errs)
 		os.Exit(1)
 	}
 	<-pagec
@@ -142,7 +149,7 @@ func main() {
 		os.Exit(1)
 	}
 
-	eg, ctx = errgroup.WithContext(context.Background())
+	eg, ctx = multierr.WithContext(context.Background())
 
 	eg.Go(func() error {
 		if !*genindex {
@@ -183,9 +190,9 @@ func main() {
 		})
 	}
 
-	err = eg.Wait()
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+	errs = eg.Wait()
+	if len(errs) > 0 {
+		printErrors("Error(s) while generating output:", errs)
 		os.Exit(1)
 	}
 }
