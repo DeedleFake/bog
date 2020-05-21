@@ -1,5 +1,6 @@
 <!--meta
 title: "First Post"
+time: 2020-05-02
 -->
 
 # {{.Data.title}}
