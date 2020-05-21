@@ -38,3 +38,12 @@ func readYAMLFile(path string) (v interface{}, err error) {
 	}
 	return v, nil
 }
+
+func fileExists(path string) (bool, error) {
+	_, err := os.Stat(path)
+	ok := !os.IsNotExist(err)
+	if ok && (err != nil) {
+		return ok, err
+	}
+	return ok, nil
+}

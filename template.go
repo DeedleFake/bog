@@ -15,6 +15,7 @@ var tmplFuncs = template.FuncMap{
 	"slugify":       slug.Make,
 	"link_to_title": func(title string) string { return fmt.Sprintf("%v.html", slug.Make(title)) },
 	"link":          func(slug string) string { return fmt.Sprintf("%v.html", slug) },
+	"remove_ext":    RemoveExt,
 }
 
 // loadTemplate conditionally parses a template from either def or

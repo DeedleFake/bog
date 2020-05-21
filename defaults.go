@@ -6,13 +6,13 @@ const (
 <html>
 	<head>
 		<meta name="generator" content="bog" />
-		{{with .Meta.author}}<meta name="author" content={{. | printf "%q"}} />{{end}}
-		{{with .Meta.desc}}<meta name="description" content={{. | printf "%q"}} />{{end}}
+		{{with .Page.Meta.author}}<meta name="author" content={{. | printf "%q"}} />{{end}}
+		{{with .Page.Meta.desc}}<meta name="description" content={{. | printf "%q"}} />{{end}}
 
-		<title>{{.Meta.title}}{{with .Data.title}} - {{.}}{{end}}</title>
+		<title>{{.Page.Meta.title}}{{with .Data.title}} - {{.}}{{end}}</title>
 	</head>
 	<body>
-		{{.Content}}
+		{{.Page.Content}}
 	</body>
 </html>`
 
@@ -27,7 +27,7 @@ const (
 		{{range .Pages -}}
 			<div>
 				<a href={{.Meta.title | link_to_title | printf "%q"}}>
-					{{- .Meta.title}} ({{.DstTime.Format "2006-01-02"}}){{"" -}}
+					{{- .Meta.title}} ({{.Meta.time.Format "2006-01-02"}}){{"" -}}
 				</a>
 			</div>
 		{{end}}

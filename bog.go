@@ -12,156 +12,13 @@ import (
 	"text/template"
 	"time"
 
-	"github.com/DeedleFake/bog/internal/bufpool"
-	"github.com/DeedleFake/bog/markdown"
-	"github.com/gosimple/slug"
-	"github.com/russross/blackfriday/v2"
 	"golang.org/x/sync/errgroup"
 )
-
-// defaultMeta contains a mapping of names to functions that are
-// called in order to provide metadata values that haven't been
-// explicitly listed.
-var defaultMeta = map[string]func(os.FileInfo) interface{}{
-	"title": func(file os.FileInfo) interface{} {
-		return RemoveExt(filepath.Base(file.Name()))
-	},
-
-	"time": func(file os.FileInfo) interface{} {
-		return file.ModTime()
-	},
-}
-
-func getDstTime(dst string, t interface{}) (time.Time, bool, error) {
-	if t, ok := t.(time.Time); ok {
-		return t, true, nil
-	}
-
-	dstinfo, err := os.Stat(dst)
-	if (err != nil) && !os.IsNotExist(err) {
-		return time.Time{}, false, fmt.Errorf("stat %q: %w", dst, err)
-	}
-	if dstinfo == nil {
-		return time.Time{}, false, nil
-	}
-	return dstinfo.ModTime(), true, nil
-}
-
-// pageInfo contains information that was collected while processing
-// a page.
-type pageInfo struct {
-	Src, Dst         string
-	SrcInfo, DstInfo os.FileInfo
-	DstTime          time.Time
-	Meta             map[string]interface{}
-}
-
-// processPage loads a page from src, gets the metadata, runs it
-// through the provided template with that metadata and the provided
-// data, writes it to a file in the directory at dst, and then returns
-// information about the page that was processed.
-func processPage(ctx context.Context, dst, src string, tmpl *template.Template, data interface{}) (info *pageInfo, err error) {
-	srcbuf, err := readFile(src)
-	defer bufpool.Put(srcbuf)
-	if err != nil {
-		return nil, err
-	}
-
-	srcInfo, err := os.Stat(src)
-	if err != nil {
-		return nil, err
-	}
-
-	md := blackfriday.New()
-	node := md.Parse(srcbuf.Bytes())
-
-	meta, err := getMeta(node, true)
-	if err != nil {
-		return nil, fmt.Errorf("get meta from %q: %w", src, err)
-	}
-	for k, f := range defaultMeta {
-		if _, ok := meta[k]; ok {
-			continue
-		}
-
-		meta[k] = f(srcInfo)
-	}
-
-	dstbuf := bufpool.Get()
-	defer bufpool.Put(dstbuf)
-
-	err = markdown.Render(dstbuf, node, blackfriday.NewHTMLRenderer(blackfriday.HTMLRendererParameters{}))
-	if err != nil {
-		return nil, fmt.Errorf("render %q: %w", dst, err)
-	}
-
-	dst = filepath.Join(dst, slug.Make(meta["title"].(string))+".html")
-
-	dsttime, ok, err := getDstTime(dst, meta["time"])
-	if err != nil {
-		return nil, err
-	}
-	if ok && dsttime.After(srcInfo.ModTime()) {
-		return &pageInfo{
-			Src:     src,
-			Dst:     dst,
-			SrcInfo: srcInfo,
-			DstTime: dsttime,
-			Meta:    meta,
-		}, ctx.Err()
-	}
-
-	out, err := os.Create(dst)
-	if err != nil {
-		return nil, err
-	}
-	defer out.Close()
-
-	contentTmpl, err := template.New("content").Funcs(tmplFuncs).Parse(dstbuf.String())
-	if err != nil {
-		return nil, fmt.Errorf("parse content template for %q: %w", src, err)
-	}
-
-	dstbuf.Reset()
-	err = contentTmpl.Execute(dstbuf, map[string]interface{}{
-		"Data": data,
-		"Meta": meta,
-	})
-	if err != nil {
-		return nil, fmt.Errorf("execute content template for %q: %w", src, err)
-	}
-
-	err = tmpl.Execute(out, map[string]interface{}{
-		"Data":    data,
-		"Meta":    meta,
-		"Content": dstbuf.String(),
-	})
-	if err != nil {
-		return nil, fmt.Errorf("execute template for %q: %w", src, err)
-	}
-
-	dstinfo, err := out.Stat()
-	if err != nil {
-		return nil, err
-	}
-	if dsttime == (time.Time{}) {
-		dsttime = dstinfo.ModTime()
-	}
-
-	return &pageInfo{
-		Src:     src,
-		Dst:     dst,
-		SrcInfo: srcInfo,
-		DstInfo: dstinfo,
-		DstTime: dsttime,
-		Meta:    meta,
-	}, ctx.Err()
-}
 
 // genIndex generates an index of the provided pages using the
 // provided template and writes it to a file under the directory at
 // dst.
-func genIndex(dst string, pages []*pageInfo, tmpl *template.Template, data interface{}) error {
+func genIndex(dst string, pages []*PageInfo, tmpl *template.Template, data interface{}) error {
 	file, err := os.Create(filepath.Join(dst, "index.html"))
 	if err != nil {
 		return err
@@ -169,11 +26,11 @@ func genIndex(dst string, pages []*pageInfo, tmpl *template.Template, data inter
 	defer file.Close()
 
 	err = tmpl.Execute(file, map[string]interface{}{
-		"Data":  data,
 		"Pages": pages,
+		"Data":  data,
 	})
 	if err != nil {
-		return fmt.Errorf("execute index template: %w", err)
+		return fmt.Errorf("template execute: %w", err)
 	}
 	return nil
 }
@@ -209,12 +66,6 @@ func main() {
 		data = d
 	}
 
-	err := os.MkdirAll(*output, 0755)
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "Error: make output directory: %v\n", err)
-		os.Exit(1)
-	}
-
 	files, err := ioutil.ReadDir(source)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Error: readdir on source directory: %v\n", err)
@@ -235,8 +86,8 @@ func main() {
 
 	eg, ctx := errgroup.WithContext(context.Background())
 
-	var pages []*pageInfo
-	pagec := make(chan *pageInfo)
+	var pages []*PageInfo
+	pagec := make(chan *PageInfo)
 	go func() {
 		for {
 			select {
@@ -246,14 +97,12 @@ func main() {
 
 			case page := <-pagec:
 				i := sort.Search(len(pages), func(i int) bool {
-					return page.DstTime.After(pages[i].DstTime)
+					return page.Meta["time"].(time.Time).After(pages[i].Meta["time"].(time.Time))
 				})
 
 				pages = append(pages, nil)
 				copy(pages[i+1:], pages[i:])
 				pages[i] = page
-
-				fmt.Printf("%q -> %q\n", page.Src, page.Dst)
 			}
 		}
 	}()
@@ -265,9 +114,10 @@ func main() {
 
 		file := file
 		eg.Go(func() error {
-			page, err := processPage(ctx, *output, filepath.Join(source, file.Name()), pageTmpl, data)
-			if page == nil {
-				return err
+			path := filepath.Join(source, file.Name())
+			page, err := LoadPage(path, data)
+			if err != nil {
+				return fmt.Errorf("load %q: $w", path, err)
 			}
 
 			select {
@@ -284,15 +134,58 @@ func main() {
 		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 		os.Exit(1)
 	}
+	<-pagec
 
-	if !*genindex {
-		return
+	err = os.MkdirAll(*output, 0755)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Error: make output directory: %v\n", err)
+		os.Exit(1)
 	}
 
-	<-pagec
-	err = genIndex(*output, pages, indexTmpl, data)
+	eg, ctx = errgroup.WithContext(context.Background())
+
+	eg.Go(func() error {
+		if !*genindex {
+			return nil
+		}
+
+		err = genIndex(*output, pages, indexTmpl, data)
+		if err != nil {
+			return fmt.Errorf("generate index: %w", err)
+		}
+
+		fmt.Printf("Generated %q\n", filepath.Join(*output, "index.html"))
+		return nil
+	})
+
+	for _, page := range pages {
+		page := page
+		eg.Go(func() error {
+			path := filepath.Join(*output, page.Output())
+			ok, err := fileExists(path)
+			if ok || (err != nil) {
+				return err
+			}
+
+			file, err := os.Create(path)
+			if err != nil {
+				return err
+			}
+			defer file.Close()
+
+			err = page.Execute(file, pageTmpl, data)
+			if err != nil {
+				return fmt.Errorf("execute %q: %w", page.Input(), err)
+			}
+
+			fmt.Printf("Generated %q\n", path)
+			return nil
+		})
+	}
+
+	err = eg.Wait()
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "Error: generate index: %v\n", err)
+		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 		os.Exit(1)
 	}
 }
