@@ -157,7 +157,7 @@ func main() {
 	page := flag.String("page", "", "if not blank, path to page template")
 	index := flag.String("index", "", "if not blank, path to index template")
 	genindex := flag.Bool("genindex", true, "generate an index")
-	datafile := flag.String("data", "", "path to optional JSON data file")
+	datafile := flag.String("data", "", "path to optional YAML data file")
 	flag.Parse()
 
 	source := flag.Arg(0)
@@ -170,7 +170,7 @@ func main() {
 
 	var data interface{}
 	if *datafile != "" {
-		d, err := readJSONFile(*datafile)
+		d, err := readYAMLFile(*datafile)
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "Error: read %q: %v\n", *datafile, err)
 			os.Exit(1)

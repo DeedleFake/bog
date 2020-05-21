@@ -2,11 +2,11 @@ package main
 
 import (
 	"bytes"
-	"encoding/json"
 	"fmt"
 
 	"github.com/russross/blackfriday/v2"
 	"golang.org/x/net/html"
+	"gopkg.in/yaml.v3"
 )
 
 // getMeta finds and retrieves metadata from a parsed markdown tree.
@@ -46,11 +46,15 @@ func getMeta(node *blackfriday.Node, unlink bool) (meta map[string]interface{}, 
 			werr = fmt.Errorf("find comment: %w", err)
 			return blackfriday.Terminate
 		}
+		if !bytes.HasPrefix(comment, []byte("meta")) {
+			return blackfriday.SkipChildren
+		}
 
 		if comment != nil {
-			err = json.Unmarshal(comment, &meta)
+			err = yaml.Unmarshal(comment[4:], &meta)
 			if err != nil {
-				return blackfriday.SkipChildren
+				werr = fmt.Errorf("unmarshal: %w", err)
+				return blackfriday.Terminate
 			}
 
 			if unlink {
