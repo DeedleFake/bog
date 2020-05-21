@@ -1,6 +1,6 @@
-<!--{
-	"title": "First Post"
-}-->
+<!--meta
+title: "First Post"
+-->
 
 # {{.Data.title}}
 
