@@ -10,6 +10,7 @@ import (
 	"sort"
 	"strings"
 	"text/template"
+	"time"
 
 	"github.com/DeedleFake/bog/internal/bufpool"
 	"github.com/DeedleFake/bog/markdown"
@@ -25,6 +26,25 @@ var defaultMeta = map[string]func(os.FileInfo) interface{}{
 	"title": func(file os.FileInfo) interface{} {
 		return RemoveExt(filepath.Base(file.Name()))
 	},
+
+	"time": func(file os.FileInfo) interface{} {
+		return file.ModTime()
+	},
+}
+
+func getDstTime(dst string, t interface{}) (time.Time, bool, error) {
+	if t, ok := t.(time.Time); ok {
+		return t, true, nil
+	}
+
+	dstinfo, err := os.Stat(dst)
+	if (err != nil) && !os.IsNotExist(err) {
+		return time.Time{}, false, fmt.Errorf("stat %q: %w", dst, err)
+	}
+	if dstinfo == nil {
+		return time.Time{}, false, nil
+	}
+	return dstinfo.ModTime(), true, nil
 }
 
 // pageInfo contains information that was collected while processing
@@ -32,6 +52,7 @@ var defaultMeta = map[string]func(os.FileInfo) interface{}{
 type pageInfo struct {
 	Src, Dst         string
 	SrcInfo, DstInfo os.FileInfo
+	DstTime          time.Time
 	Meta             map[string]interface{}
 }
 
@@ -76,12 +97,18 @@ func processPage(ctx context.Context, dst, src string, tmpl *template.Template, 
 
 	dst = filepath.Join(dst, slug.Make(meta["title"].(string))+".html")
 
-	dstinfo, err := os.Stat(dst)
-	if (err != nil) && !os.IsNotExist(err) {
-		return nil, fmt.Errorf("stat %q: %w", dst, err)
+	dsttime, ok, err := getDstTime(dst, meta["time"])
+	if err != nil {
+		return nil, err
 	}
-	if (dstinfo != nil) && dstinfo.ModTime().After(srcInfo.ModTime()) {
-		return nil, ctx.Err()
+	if ok && dsttime.After(srcInfo.ModTime()) {
+		return &pageInfo{
+			Src:     src,
+			Dst:     dst,
+			SrcInfo: srcInfo,
+			DstTime: dsttime,
+			Meta:    meta,
+		}, ctx.Err()
 	}
 
 	out, err := os.Create(dst)
@@ -113,9 +140,12 @@ func processPage(ctx context.Context, dst, src string, tmpl *template.Template, 
 		return nil, fmt.Errorf("execute template for %q: %w", src, err)
 	}
 
-	dstinfo, err = os.Stat(dst)
+	dstinfo, err := out.Stat()
 	if err != nil {
 		return nil, err
+	}
+	if dsttime == (time.Time{}) {
+		dsttime = dstinfo.ModTime()
 	}
 
 	return &pageInfo{
@@ -123,6 +153,7 @@ func processPage(ctx context.Context, dst, src string, tmpl *template.Template, 
 		Dst:     dst,
 		SrcInfo: srcInfo,
 		DstInfo: dstinfo,
+		DstTime: dsttime,
 		Meta:    meta,
 	}, ctx.Err()
 }
@@ -215,7 +246,7 @@ func main() {
 
 			case page := <-pagec:
 				i := sort.Search(len(pages), func(i int) bool {
-					return page.DstInfo.ModTime().Before(pages[i].DstInfo.ModTime())
+					return page.DstTime.After(pages[i].DstTime)
 				})
 
 				pages = append(pages, nil)

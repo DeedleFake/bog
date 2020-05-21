@@ -27,7 +27,7 @@ const (
 		{{range .Pages -}}
 			<div>
 				<a href={{.Meta.title | link_to_title | printf "%q"}}>
-					{{- .Meta.title}} ({{.DstInfo.ModTime.Format "2006-01-02"}}){{"" -}}
+					{{- .Meta.title}} ({{.DstTime.Format "2006-01-02"}}){{"" -}}
 				</a>
 			</div>
 		{{end}}
