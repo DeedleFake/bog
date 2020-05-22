@@ -42,6 +42,34 @@ func printErrors(intro string, errs []error) {
 	}
 }
 
+type extraFlag map[string]string
+
+func (f extraFlag) String() string {
+	var sb strings.Builder
+
+	var sep string
+	for k, v := range f {
+		fmt.Fprintf(&sb, "%s%v:%v", sep, k, v)
+		sep = ","
+	}
+
+	return sb.String()
+}
+
+func (f extraFlag) Set(v string) error {
+	pairs := strings.Split(v, ",")
+	for _, pair := range pairs {
+		parts := strings.SplitN(pair, ":", 2)
+		if len(parts) < 2 {
+			return fmt.Errorf("invalid extra specification: %q", pair)
+		}
+
+		f[parts[0]] = parts[1]
+	}
+
+	return nil
+}
+
 func main() {
 	flag.Usage = func() {
 		fmt.Fprintf(os.Stderr, "Usage: %v [options] [source directory]\n\n", os.Args[0])
@@ -53,6 +81,8 @@ func main() {
 	index := flag.String("index", "", "if not blank, path to index template")
 	genindex := flag.Bool("genindex", true, "generate an index")
 	datafile := flag.String("data", "", "path to optional YAML data file")
+	extras := make(extraFlag)
+	flag.Var(extras, "extras", "comma-seperated template:output pairs of extra files to render")
 	flag.Parse()
 
 	source := flag.Arg(0)
@@ -89,6 +119,21 @@ func main() {
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Error: load index template: %v\n", err)
 		os.Exit(1)
+	}
+
+	// BUG: This way of doing the parsing results in an inability to use
+	// two files with the same name in different directories.
+	var extraTmpls *template.Template
+	if len(extras) > 0 {
+		extraSrcs := make([]string, 0, len(extras))
+		for src := range extras {
+			extraSrcs = append(extraSrcs, src)
+		}
+		extraTmpls, err = template.ParseFiles(extraSrcs...)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "Error load extra templates: %v\n", err)
+			os.Exit(1)
+		}
 	}
 
 	var pages []*PageInfo
@@ -186,6 +231,30 @@ func main() {
 			err = page.Execute(file, pageTmpl, data)
 			if err != nil {
 				return fmt.Errorf("execute %q: %w", page.Input(), err)
+			}
+
+			fmt.Printf("Generated %q\n", path)
+			return nil
+		})
+	}
+
+	for src, dst := range extras {
+		src, dst := src, dst
+		eg.Go(func() error {
+			path := filepath.Join(*output, dst)
+
+			file, err := os.Create(path)
+			if err != nil {
+				return err
+			}
+			defer file.Close()
+
+			err = extraTmpls.ExecuteTemplate(file, filepath.Base(src), map[string]interface{}{
+				"Data":  data,
+				"Pages": pages,
+			})
+			if err != nil {
+				return fmt.Errorf("execute %q: %w", src, err)
 			}
 
 			fmt.Printf("Generated %q\n", path)
