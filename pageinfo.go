@@ -48,10 +48,10 @@ func LoadPage(path string, data interface{}) (*PageInfo, error) {
 		return nil, err
 	}
 
-	md := blackfriday.New()
+	md := blackfriday.New(blackfriday.WithExtensions(blackfriday.CommonExtensions))
 	node := md.Parse(buf.Bytes())
 
-	meta, err := getMeta(node, false)
+	meta, err := getMeta(node, true)
 	if err != nil {
 		return nil, fmt.Errorf("get meta: %w", err)
 	}
