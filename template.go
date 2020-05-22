@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"reflect"
 	"strings"
 	"text/template"
 
@@ -16,6 +17,13 @@ var tmplFuncs = template.FuncMap{
 	"link_to_title": func(title string) string { return fmt.Sprintf("%v.html", slug.Make(title)) },
 	"link":          func(slug string) string { return fmt.Sprintf("%v.html", slug) },
 	"remove_ext":    RemoveExt,
+	"limit": func(length int, data interface{}) interface{} {
+		v := reflect.ValueOf(data)
+		if v.Len() < length {
+			return v
+		}
+		return v.Slice(0, length).Interface()
+	},
 }
 
 // loadTemplate conditionally parses a template from either def or

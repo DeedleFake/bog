@@ -114,7 +114,7 @@ func (page *PageInfo) getMeta(keys ...string) interface{} {
 	meta := page.Meta
 
 	for len(keys) > 1 {
-		next, ok := page.Meta[keys[0]].(map[string]interface{})
+		next, ok := meta[keys[0]].(map[string]interface{})
 		if !ok {
 			return nil
 		}
@@ -123,7 +123,7 @@ func (page *PageInfo) getMeta(keys ...string) interface{} {
 		meta = next
 	}
 
-	return meta[keys[1]]
+	return meta[keys[0]]
 }
 
 func (page *PageInfo) Input() string {

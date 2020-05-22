@@ -129,7 +129,7 @@ func main() {
 		for src := range extras {
 			extraSrcs = append(extraSrcs, src)
 		}
-		extraTmpls, err = template.ParseFiles(extraSrcs...)
+		extraTmpls, err = template.New("extras").Funcs(tmplFuncs).ParseFiles(extraSrcs...)
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "Error load extra templates: %v\n", err)
 			os.Exit(1)
