@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -63,28 +64,34 @@ func LoadPage(path string, data interface{}) (*PageInfo, error) {
 		meta[k] = f(inputInfo)
 	}
 
-	// Have to use a second buffer because the blackfriday.Nodes just
-	// reference the original buffer that got parsed.
-	mdbuf := bufpool.Get()
-	defer bufpool.Put(mdbuf)
-	err = markdown.Render(mdbuf, node, blackfriday.NewHTMLRenderer(blackfriday.HTMLRendererParameters{}))
-	if err != nil {
-		return nil, fmt.Errorf("render markdown: %w", err)
-	}
-
-	tmplMeta, _ := meta["template"].(map[string]interface{})
-	delims, _ := tmplMeta["delims"].(map[string]interface{})
-	delimLeft, _ := delims["left"].(string)
-	delimRight, _ := delims["right"].(string)
-
-	tmpl, err := template.New("content").Funcs(tmplFuncs).Delims(delimLeft, delimRight).Parse(mdbuf.String())
-	if err != nil {
-		return nil, fmt.Errorf("template parse: %w", err)
-	}
-
 	page := &PageInfo{
 		InputInfo: inputInfo,
 		Meta:      meta,
+	}
+
+	mdbuf := bufpool.Get()
+	defer bufpool.Put(mdbuf)
+	err = page.render(mdbuf, node, blackfriday.NewHTMLRenderer(blackfriday.HTMLRendererParameters{}), data)
+	if err != nil {
+		return nil, fmt.Errorf("render HTML: %w", err)
+	}
+	page.Content = mdbuf.String()
+
+	return page, nil
+}
+
+func (page *PageInfo) render(buf *bytes.Buffer, root *blackfriday.Node, renderer blackfriday.Renderer, data interface{}) error {
+	err := markdown.Render(buf, root, blackfriday.NewHTMLRenderer(blackfriday.HTMLRendererParameters{}))
+	if err != nil {
+		return fmt.Errorf("render markdown: %w", err)
+	}
+
+	delimLeft, _ := page.getMeta("template", "delims", "left").(string)
+	delimRight, _ := page.getMeta("template", "delims", "right").(string)
+
+	tmpl, err := template.New("content").Funcs(tmplFuncs).Delims(delimLeft, delimRight).Parse(buf.String())
+	if err != nil {
+		return fmt.Errorf("template parse: %w", err)
 	}
 
 	buf.Reset()
@@ -93,11 +100,30 @@ func LoadPage(path string, data interface{}) (*PageInfo, error) {
 		"Data": data,
 	})
 	if err != nil {
-		return nil, fmt.Errorf("template execute: %w", err)
+		return fmt.Errorf("template execute: %w", err)
 	}
-	page.Content = buf.String()
 
-	return page, nil
+	return nil
+}
+
+func (page *PageInfo) getMeta(keys ...string) interface{} {
+	if len(keys) == 0 {
+		panic(errors.New("no keys provided"))
+	}
+
+	meta := page.Meta
+
+	for len(keys) > 1 {
+		next, ok := page.Meta[keys[0]].(map[string]interface{})
+		if !ok {
+			return nil
+		}
+
+		keys = keys[1:]
+		meta = next
+	}
+
+	return meta[keys[1]]
 }
 
 func (page *PageInfo) Input() string {
