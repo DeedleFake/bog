@@ -72,7 +72,12 @@ func LoadPage(path string, data interface{}) (*PageInfo, error) {
 		return nil, fmt.Errorf("render markdown: %w", err)
 	}
 
-	tmpl, err := template.New("content").Funcs(tmplFuncs).Parse(mdbuf.String())
+	tmplMeta, _ := meta["template"].(map[string]interface{})
+	delims, _ := tmplMeta["delims"].(map[string]interface{})
+	delimLeft, _ := delims["left"].(string)
+	delimRight, _ := delims["right"].(string)
+
+	tmpl, err := template.New("content").Funcs(tmplFuncs).Delims(delimLeft, delimRight).Parse(mdbuf.String())
 	if err != nil {
 		return nil, fmt.Errorf("template parse: %w", err)
 	}
