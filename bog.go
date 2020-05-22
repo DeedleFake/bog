@@ -91,18 +91,19 @@ func main() {
 		os.Exit(1)
 	}
 
-	eg, ctx := multierr.WithContext(context.Background())
-
 	var pages []*PageInfo
 	pagec := make(chan *PageInfo)
+	pagesDone := make(chan struct{})
 	go func() {
+		defer close(pagesDone)
+
 		for {
 			select {
-			case <-ctx.Done():
-				close(pagec)
-				return
+			case page, ok := <-pagec:
+				if !ok {
+					return
+				}
 
-			case page := <-pagec:
 				i := sort.Search(len(pages), func(i int) bool {
 					return page.Meta["time"].(time.Time).After(pages[i].Meta["time"].(time.Time))
 				})
@@ -114,6 +115,7 @@ func main() {
 		}
 	}()
 
+	eg, ctx := multierr.WithContext(context.Background())
 	for _, file := range files {
 		if strings.ToLower(filepath.Ext(file.Name())) != ".md" {
 			continue
@@ -141,7 +143,8 @@ func main() {
 		printErrors("Error(s) while loading pages:", errs)
 		os.Exit(1)
 	}
-	<-pagec
+	close(pagec)
+	<-pagesDone
 
 	err = os.MkdirAll(*output, 0755)
 	if err != nil {
