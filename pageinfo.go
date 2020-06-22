@@ -11,6 +11,7 @@ import (
 
 	"github.com/DeedleFake/bog/internal/bufpool"
 	"github.com/DeedleFake/bog/markdown"
+	"github.com/Depado/bfchroma"
 	"github.com/gosimple/slug"
 	"github.com/russross/blackfriday/v2"
 	"golang.org/x/net/html"
@@ -71,7 +72,14 @@ func LoadPage(path string, data interface{}) (*PageInfo, error) {
 
 	mdbuf := bufpool.Get()
 	defer bufpool.Put(mdbuf)
-	err = page.render(mdbuf, node, blackfriday.NewHTMLRenderer(blackfriday.HTMLRendererParameters{}), data)
+	err = page.render(
+		mdbuf,
+		node,
+		bfchroma.NewRenderer(
+			bfchroma.Style("monokai"),
+		),
+		data,
+	)
 	if err != nil {
 		return nil, fmt.Errorf("render HTML: %w", err)
 	}
@@ -81,7 +89,7 @@ func LoadPage(path string, data interface{}) (*PageInfo, error) {
 }
 
 func (page *PageInfo) render(buf *bytes.Buffer, root *blackfriday.Node, renderer blackfriday.Renderer, data interface{}) error {
-	err := markdown.Render(buf, root, blackfriday.NewHTMLRenderer(blackfriday.HTMLRendererParameters{}))
+	err := markdown.Render(buf, root, renderer)
 	if err != nil {
 		return fmt.Errorf("render markdown: %w", err)
 	}
