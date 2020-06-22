@@ -81,6 +81,7 @@ func main() {
 	index := flag.String("index", "", "if not blank, path to index template")
 	genindex := flag.Bool("genindex", true, "generate an index")
 	datafile := flag.String("data", "", "path to optional YAML data file")
+	hlstyle := flag.String("hlstyle", "monokai", "chroma syntax highlighting style")
 	extras := make(extraFlag)
 	flag.Var(extras, "extras", "comma-seperated template:output pairs of extra files to render")
 	flag.Parse()
@@ -169,7 +170,7 @@ func main() {
 		file := file
 		eg.Go(func() error {
 			path := filepath.Join(source, file.Name())
-			page, err := LoadPage(path, data)
+			page, err := LoadPage(path, data, WithStyle(*hlstyle))
 			if err != nil {
 				return fmt.Errorf("load %q: %w", path, err)
 			}

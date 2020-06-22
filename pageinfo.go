@@ -38,7 +38,12 @@ type PageInfo struct {
 	Content   string
 }
 
-func LoadPage(path string, data interface{}) (*PageInfo, error) {
+func LoadPage(path string, data interface{}, options ...PageOption) (*PageInfo, error) {
+	var config pageConfig
+	for _, option := range options {
+		option(&config)
+	}
+
 	buf, err := readFile(path)
 	defer bufpool.Put(buf)
 	if err != nil {
@@ -76,7 +81,7 @@ func LoadPage(path string, data interface{}) (*PageInfo, error) {
 		mdbuf,
 		node,
 		bfchroma.NewRenderer(
-			bfchroma.Style("monokai"),
+			bfchroma.Style(config.Style),
 		),
 		data,
 	)
@@ -213,4 +218,16 @@ func getMeta(node *blackfriday.Node, unlink bool) (meta map[string]interface{}, 
 	})
 
 	return meta, werr
+}
+
+type pageConfig struct {
+	Style string
+}
+
+type PageOption func(*pageConfig)
+
+func WithStyle(style string) PageOption {
+	return func(config *pageConfig) {
+		config.Style = style
+	}
 }
