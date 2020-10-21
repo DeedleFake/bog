@@ -1,3 +1,4 @@
+// Package bufpool provides a shared pool of buffers.
 package bufpool
 
 import (

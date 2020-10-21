@@ -39,6 +39,7 @@ func readYAMLFile(path string) (v interface{}, err error) {
 	return v, nil
 }
 
+// fileExists returns true if the file exists.
 func fileExists(path string) (bool, error) {
 	_, err := os.Stat(path)
 	ok := !os.IsNotExist(err)
