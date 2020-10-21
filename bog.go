@@ -12,6 +12,7 @@ import (
 	"text/template"
 	"time"
 
+	"github.com/DeedleFake/bog/internal/cli"
 	"github.com/DeedleFake/bog/multierr"
 )
 
@@ -74,6 +75,8 @@ func (f extraFlag) Set(v string) error {
 }
 
 func main() {
+	ctx := cli.SignalContext(context.Background(), os.Interrupt)
+
 	flag.Usage = func() {
 		fmt.Fprintf(os.Stderr, "Usage: %v [options] [source directory]\n\n", os.Args[0])
 		fmt.Fprintln(os.Stderr, "Options:")
@@ -157,7 +160,7 @@ func main() {
 		}
 	}()
 
-	eg, ctx := multierr.WithContext(context.Background())
+	eg, ctx := multierr.WithContext(ctx)
 	for _, file := range files {
 		if strings.ToLower(filepath.Ext(file.Name())) != ".md" {
 			continue
@@ -194,7 +197,7 @@ func main() {
 		os.Exit(1)
 	}
 
-	eg, ctx = multierr.WithContext(context.Background())
+	eg, ctx = multierr.WithContext(ctx)
 
 	eg.Go(func() error {
 		if !*genindex {
