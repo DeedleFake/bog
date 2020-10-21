@@ -1,3 +1,5 @@
+// Package markdown contains some utilities for dealing with markdown
+// wherever Blackfriday falls short.
 package markdown
 
 import (
@@ -6,6 +8,9 @@ import (
 	"github.com/russross/blackfriday/v2"
 )
 
+// An errWriter is a writer that writes until a single error has been
+// returned by the underlying writer, at which point it simply returns
+// that error.
 type errWriter struct {
 	w   io.Writer
 	err error
