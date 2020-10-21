@@ -35,6 +35,8 @@ func genIndex(dst string, pages []*PageInfo, tmpl *template.Template, data inter
 	return nil
 }
 
+// printErrors prints the provided intro and then the list of errors,
+// indented, to stderr.
 func printErrors(intro string, errs []error) {
 	fmt.Fprintln(os.Stderr, intro)
 	for _, err := range errs {
@@ -42,6 +44,7 @@ func printErrors(intro string, errs []error) {
 	}
 }
 
+// extraFlag parses the -extras flag.
 type extraFlag map[string]string
 
 func (f extraFlag) String() string {
@@ -143,21 +146,14 @@ func main() {
 	go func() {
 		defer close(pagesDone)
 
-		for {
-			select {
-			case page, ok := <-pagec:
-				if !ok {
-					return
-				}
+		for page := range pagec {
+			i := sort.Search(len(pages), func(i int) bool {
+				return page.Meta["time"].(time.Time).After(pages[i].Meta["time"].(time.Time))
+			})
 
-				i := sort.Search(len(pages), func(i int) bool {
-					return page.Meta["time"].(time.Time).After(pages[i].Meta["time"].(time.Time))
-				})
-
-				pages = append(pages, nil)
-				copy(pages[i+1:], pages[i:])
-				pages[i] = page
-			}
+			pages = append(pages, nil)
+			copy(pages[i+1:], pages[i:])
+			pages[i] = page
 		}
 	}()
 

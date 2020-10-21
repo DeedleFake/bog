@@ -38,6 +38,8 @@ type PageInfo struct {
 	Content   string
 }
 
+// LoadPage loads a page from the given path and renders it with the
+// given data.
 func LoadPage(path string, data interface{}, options ...PageOption) (*PageInfo, error) {
 	var config pageConfig
 	for _, option := range options {
@@ -93,6 +95,8 @@ func LoadPage(path string, data interface{}, options ...PageOption) (*PageInfo, 
 	return page, nil
 }
 
+// render renders the page into buf twice, once as just pure markdown
+// and once as a template produced from that markdown.
 func (page *PageInfo) render(buf *bytes.Buffer, root *blackfriday.Node, renderer blackfriday.Renderer, data interface{}) error {
 	err := markdown.Render(buf, root, renderer)
 	if err != nil {
@@ -139,14 +143,17 @@ func (page *PageInfo) getMeta(keys ...string) interface{} {
 	return meta[keys[0]]
 }
 
+// Input returns the name of the file that the page was loaded from.
 func (page *PageInfo) Input() string {
 	return page.InputInfo.Name()
 }
 
+// Output returns the name of the file that the page will output to.
 func (page *PageInfo) Output() string {
 	return slug.Make(fmt.Sprint(page.Meta["title"])) + ".html"
 }
 
+// Execute renders the page to w.
 func (page *PageInfo) Execute(w io.Writer, tmpl *template.Template, data interface{}) error {
 	err := tmpl.Execute(w, map[string]interface{}{
 		"Page": page,
@@ -220,12 +227,18 @@ func getMeta(node *blackfriday.Node, unlink bool) (meta map[string]interface{}, 
 	return meta, werr
 }
 
+// pageConfig contains a configuration for a page for manipulation by
+// a PageOption.
 type pageConfig struct {
 	Style string
 }
 
+// A PageOption is a function that provides optional configuration
+// info to a PageInfo.
 type PageOption func(*pageConfig)
 
+// WithStyle returns a PageOption that sets the rendering style to be
+// used by Chroma.
 func WithStyle(style string) PageOption {
 	return func(config *pageConfig) {
 		config.Style = style
