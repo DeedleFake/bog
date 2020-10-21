@@ -1,3 +1,5 @@
+// Package multierr provides a mechanism for dealing with concurrent
+// errors.
 package multierr
 
 import (
@@ -5,6 +7,8 @@ import (
 	"sync"
 )
 
+// MultiErr is a concurrency structure for handling the potential of
+// multiple concurrently produced errors.
 type MultiErr struct {
 	wg     sync.WaitGroup
 	cancel context.CancelFunc
@@ -13,6 +17,10 @@ type MultiErr struct {
 	merr sync.Mutex
 }
 
+// WithContext creates a new MultiErr that uses a given
+// context.Context. It returns both the new MultiErr and a new child
+// context that is canceled when the MultiErr is finished, either due
+// to an error or not.
 func WithContext(ctx context.Context) (*MultiErr, context.Context) {
 	ctx, cancel := context.WithCancel(ctx)
 	return &MultiErr{
@@ -20,6 +28,9 @@ func WithContext(ctx context.Context) (*MultiErr, context.Context) {
 	}, ctx
 }
 
+// Go starts a function concurrently. If the function returns an
+// error, the MultiErr is canceled and the error is added to the list
+// of returned arrors.
 func (me *MultiErr) Go(f func() error) {
 	me.wg.Add(1)
 	go func() {
@@ -36,6 +47,10 @@ func (me *MultiErr) Go(f func() error) {
 	}()
 }
 
+// Wait waits for all of the functions started with Go to finish, then
+// cancels the context returned from WithContext and returns all of
+// the errors that were returned from those functions in an undefined
+// order.
 func (me *MultiErr) Wait() (errs []error) {
 	defer me.cancel()
 
