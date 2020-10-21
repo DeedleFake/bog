@@ -74,55 +74,58 @@ func (f extraFlag) Set(v string) error {
 	return nil
 }
 
+type flags struct {
+	Output   string    `flag:"out,,output directory, or source directory if blank"`
+	Page     string    `flag:"page,,if not blank, path to page template"`
+	Index    string    `flag:"index,,if not blank, path to index template"`
+	GenIndex bool      `flag:"genindex,true,generate an index"`
+	Data     string    `flag:"data,,path to optional YAML data file"`
+	HLStyle  string    `flag:"hlstyle,monokai,Chroma syntax highlighting style"`
+	Extras   extraFlag `flag:"extras,comma-separated template:output pairs of extra files to render"`
+
+	Source string `flag:"0,."`
+}
+
 func main() {
 	ctx := cli.SignalContext(context.Background(), os.Interrupt)
 
-	flag.Usage = func() {
+	var flags flags
+	err := cli.ParseFlags(&flags, func() {
 		fmt.Fprintf(os.Stderr, "Usage: %v [options] [source directory]\n\n", os.Args[0])
 		fmt.Fprintln(os.Stderr, "Options:")
 		flag.PrintDefaults()
+	})
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Error: parse flags: %v\n", err)
+		os.Exit(2)
 	}
-	output := flag.String("out", "", "output directory, or source directory if blank")
-	page := flag.String("page", "", "if not blank, path to page template")
-	index := flag.String("index", "", "if not blank, path to index template")
-	genindex := flag.Bool("genindex", true, "generate an index")
-	datafile := flag.String("data", "", "path to optional YAML data file")
-	hlstyle := flag.String("hlstyle", "monokai", "chroma syntax highlighting style")
-	extras := make(extraFlag)
-	flag.Var(extras, "extras", "comma-seperated template:output pairs of extra files to render")
-	flag.Parse()
-
-	source := flag.Arg(0)
-	if source == "" {
-		source = "."
-	}
-	if *output == "" {
-		*output = source
+	if flags.Output == "" {
+		flags.Output = flags.Source
 	}
 
 	var data interface{}
-	if *datafile != "" {
-		d, err := readYAMLFile(*datafile)
+	if flags.Data != "" {
+		d, err := readYAMLFile(flags.Data)
 		if err != nil {
-			fmt.Fprintf(os.Stderr, "Error: read %q: %v\n", *datafile, err)
+			fmt.Fprintf(os.Stderr, "Error: read %q: %v\n", flags.Data, err)
 			os.Exit(1)
 		}
 		data = d
 	}
 
-	files, err := ioutil.ReadDir(source)
+	files, err := ioutil.ReadDir(flags.Source)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Error: readdir on source directory: %v\n", err)
 		os.Exit(1)
 	}
 
-	pageTmpl, err := loadTemplate(template.New("page").Funcs(tmplFuncs), defaultPage, *page)
+	pageTmpl, err := loadTemplate(template.New("page").Funcs(tmplFuncs), defaultPage, flags.Page)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Error: load page template: %v\n", err)
 		os.Exit(1)
 	}
 
-	indexTmpl, err := loadTemplate(template.New("index").Funcs(tmplFuncs), defaultIndex, *index)
+	indexTmpl, err := loadTemplate(template.New("index").Funcs(tmplFuncs), defaultIndex, flags.Index)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Error: load index template: %v\n", err)
 		os.Exit(1)
@@ -131,9 +134,9 @@ func main() {
 	// BUG: This way of doing the parsing results in an inability to use
 	// two files with the same name in different directories.
 	var extraTmpls *template.Template
-	if len(extras) > 0 {
-		extraSrcs := make([]string, 0, len(extras))
-		for src := range extras {
+	if len(flags.Extras) > 0 {
+		extraSrcs := make([]string, 0, len(flags.Extras))
+		for src := range flags.Extras {
 			extraSrcs = append(extraSrcs, src)
 		}
 		extraTmpls, err = template.New("extras").Funcs(tmplFuncs).ParseFiles(extraSrcs...)
@@ -168,8 +171,8 @@ func main() {
 
 		file := file
 		eg.Go(func() error {
-			path := filepath.Join(source, file.Name())
-			page, err := LoadPage(path, data, WithStyle(*hlstyle))
+			path := filepath.Join(flags.Source, file.Name())
+			page, err := LoadPage(path, data, WithStyle(flags.HLStyle))
 			if err != nil {
 				return fmt.Errorf("load %q: %w", path, err)
 			}
@@ -191,7 +194,7 @@ func main() {
 	close(pagec)
 	<-pagesDone
 
-	err = os.MkdirAll(*output, 0755)
+	err = os.MkdirAll(flags.Output, 0755)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Error: make output directory: %v\n", err)
 		os.Exit(1)
@@ -200,23 +203,23 @@ func main() {
 	eg, ctx = multierr.WithContext(ctx)
 
 	eg.Go(func() error {
-		if !*genindex {
+		if !flags.GenIndex {
 			return nil
 		}
 
-		err = genIndex(*output, pages, indexTmpl, data)
+		err = genIndex(flags.Output, pages, indexTmpl, data)
 		if err != nil {
 			return fmt.Errorf("generate index: %w", err)
 		}
 
-		fmt.Printf("Generated %q\n", filepath.Join(*output, "index.html"))
+		fmt.Printf("Generated %q\n", filepath.Join(flags.Output, "index.html"))
 		return nil
 	})
 
 	for _, page := range pages {
 		page := page
 		eg.Go(func() error {
-			path := filepath.Join(*output, page.Output())
+			path := filepath.Join(flags.Output, page.Output())
 			ok, err := fileExists(path)
 			if ok || (err != nil) {
 				return err
@@ -238,10 +241,10 @@ func main() {
 		})
 	}
 
-	for src, dst := range extras {
+	for src, dst := range flags.Extras {
 		src, dst := src, dst
 		eg.Go(func() error {
-			path := filepath.Join(*output, dst)
+			path := filepath.Join(flags.Output, dst)
 
 			file, err := os.Create(path)
 			if err != nil {
