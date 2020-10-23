@@ -3,6 +3,7 @@ package cli
 import (
 	"flag"
 	"fmt"
+	"os"
 	"reflect"
 	"strconv"
 	"strings"
@@ -37,7 +38,9 @@ var (
 // number, that number is assumed to correspond to the index of an
 // extra argument as returned by flag.Arg(n). An optional second
 // element is used as a default value.
-func ParseFlags(flags interface{}, usage func()) error {
+func ParseFlags(flags interface{}, usage func(fs *flag.FlagSet)) error {
+	fs := flag.NewFlagSet(os.Args[0], flag.ExitOnError)
+
 	type argFlag struct {
 		field reflect.StructField
 		tag   string
@@ -78,11 +81,11 @@ func ParseFlags(flags interface{}, usage func()) error {
 		}
 
 		if val, ok := fv.Interface().(flag.Value); ok {
-			flag.Var(val, parts[0], parts[1])
+			fs.Var(val, parts[0], parts[1])
 			continue
 		}
 		if val, ok := fv.Addr().Interface().(flag.Value); ok {
-			flag.Var(val, parts[0], parts[1])
+			fs.Var(val, parts[0], parts[1])
 			continue
 		}
 
@@ -93,55 +96,63 @@ func ParseFlags(flags interface{}, usage func()) error {
 			if err != nil {
 				panic(fmt.Errorf("parse default from %q for %q: %w", tag, field.Name, err))
 			}
-			flag.BoolVar(fv.Addr().Convert(boolType).Interface().(*bool), parts[0], d, parts[2])
+			fs.BoolVar(fv.Addr().Convert(boolType).Interface().(*bool), parts[0], d, parts[2])
 
 		case reflect.Float64:
 			d, err := strconv.ParseFloat(parts[1], 64)
 			if err != nil {
 				panic(fmt.Errorf("parse default from %q for %q: %w", tag, field.Name, err))
 			}
-			flag.Float64Var(fv.Addr().Convert(float64Type).Interface().(*float64), parts[0], d, parts[2])
+			fs.Float64Var(fv.Addr().Convert(float64Type).Interface().(*float64), parts[0], d, parts[2])
 
 		case reflect.Int:
 			d, err := strconv.ParseInt(parts[1], 10, 0)
 			if err != nil {
 				panic(fmt.Errorf("parse default from %q for %q: %w", tag, field.Name, err))
 			}
-			flag.IntVar(fv.Addr().Convert(intType).Interface().(*int), parts[0], int(d), parts[2])
+			fs.IntVar(fv.Addr().Convert(intType).Interface().(*int), parts[0], int(d), parts[2])
 
 		case reflect.Int64:
 			d, err := strconv.ParseInt(parts[1], 10, 64)
 			if err != nil {
 				panic(fmt.Errorf("parse default from %q for %q: %w", tag, field.Name, err))
 			}
-			flag.Int64Var(fv.Addr().Convert(int64Type).Interface().(*int64), parts[0], d, parts[2])
+			fs.Int64Var(fv.Addr().Convert(int64Type).Interface().(*int64), parts[0], d, parts[2])
 
 		case reflect.String:
-			flag.StringVar(fv.Addr().Convert(stringType).Interface().(*string), parts[0], parts[1], parts[2])
+			fs.StringVar(fv.Addr().Convert(stringType).Interface().(*string), parts[0], parts[1], parts[2])
 
 		case reflect.Uint:
 			d, err := strconv.ParseUint(parts[1], 10, 0)
 			if err != nil {
 				panic(fmt.Errorf("parse default from %q for %q: %w", tag, field.Name, err))
 			}
-			flag.UintVar(fv.Addr().Convert(uintType).Interface().(*uint), parts[0], uint(d), parts[2])
+			fs.UintVar(fv.Addr().Convert(uintType).Interface().(*uint), parts[0], uint(d), parts[2])
 
 		case reflect.Uint64:
 			d, err := strconv.ParseUint(parts[1], 10, 64)
 			if err != nil {
 				panic(fmt.Errorf("parse default from %q for %q: %w", tag, field.Name, err))
 			}
-			flag.Uint64Var(fv.Addr().Convert(uint64Type).Interface().(*uint64), parts[0], d, parts[2])
+			fs.Uint64Var(fv.Addr().Convert(uint64Type).Interface().(*uint64), parts[0], d, parts[2])
 
 		default:
 			panic(fmt.Errorf("unsupported flag type for field %q: %v", field.Name, field.Type))
 		}
 	}
 
-	flag.Parse()
+	if usage != nil {
+		fs.Usage = func() {
+			usage(fs)
+		}
+	}
+	err := fs.Parse(os.Args[1:])
+	if err != nil {
+		return fmt.Errorf("parse: %w", err)
+	}
 
 	for _, arg := range args {
-		raw := flag.Arg(arg.n)
+		raw := fs.Arg(arg.n)
 
 		if val, ok := arg.v.Interface().(flag.Value); ok {
 			err := val.Set(raw)
