@@ -90,10 +90,10 @@ func main() {
 	ctx := cli.SignalContext(context.Background(), os.Interrupt)
 
 	var flags flags
-	err := cli.ParseFlags(&flags, func() {
-		fmt.Fprintf(os.Stderr, "Usage: %v [options] [source directory]\n\n", os.Args[0])
-		fmt.Fprintln(os.Stderr, "Options:")
-		flag.PrintDefaults()
+	err := cli.ParseFlags(&flags, func(fs *flag.FlagSet) {
+		fmt.Fprintf(fs.Output(), "Usage: %v [options] [source directory]\n\n", os.Args[0])
+		fmt.Fprintln(fs.Output(), "Options:")
+		fs.PrintDefaults()
 	})
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Error: parse flags: %v\n", err)
